@@ -1,101 +1,185 @@
-let ws
-let decoder
-let image
-let quadSize
-let imageSize
-let ticksWithoutMouse = 0
-let autoMouse
-let autoMouseGoal
-
+let canvasSize
+let model
+let grid
+const outerGridSize = 28
+const innerGridSize = 5
+const drawRadius = 7
 
 async function loadModel() {
-  decoder = await tf.loadLayersModel('../decoder/model.json');
+  model = await tf.loadLayersModel('../model/model.json');
 }
 
 loadModel()
 
 function setup() {
   createCanvas(innerWidth, innerHeight)
+  canvasSize = innerWidth
   noStroke()
-
   document.getElementsByTagName('main')[0].style.height = innerHeight + 'px'
-
   background(0)
 
-  quadSize = (innerHeight - innerWidth) / 28
-  imageSize = quadSize * 28
+  textSize(30)
+  textAlign(CENTER, CENTER)
 
-  autoMouse = createVector()
-  autoMouseGoal = createVector(random(innerWidth), random(innerWidth))
-
-  alert('Bem vindo ao visualizador de "Mnist auto encoder", toque no plano 2d para escolher valores de entrada ou assista a apresentação automática apertando na imagem inferior.')
+  grid = createEmptyGrid()
+  console.log(grid)
 }
 
 function windowResized() {
-  resizeCanvas(innerWidth, innerHeight)
-
-  quadSize = (innerHeight - innerWidth) / 28
-  imageSize = quadSize * 28
+  createCanvas(innerWidth, innerHeight)
+  canvasSize = innerWidth
+  noStroke()
+  document.getElementsByTagName('main')[0].style.height = innerHeight + 'px'
+  background(0)
 }
 
 function draw() {
-  ticksWithoutMouse++
-
-  fill(255)
-
-  rect(0, innerWidth, innerWidth, innerWidth)
-
-  if (image) {
-    for (let x = 0; x < 28; x++) {
-      for (let y = 0; y < 28; y++) {
-        fill(255 - image[y][x] * 400)
-        rect((innerWidth - imageSize) / 2 + x * quadSize, innerWidth + y * quadSize, quadSize, quadSize)
-      }
-    }
+  if (mouseIsPressed) {
+    drawCircle(mouseX / innerWidth, mouseY / innerWidth)
   }
 
-  if (mouseX > 0 && mouseY > 0 && mouseX < innerWidth && mouseY < innerWidth) {
-    image = predict(mouseX, mouseY)
-    ticksWithoutMouse = 0
-  }
+  // console.log(prediction().map(a => a.toFixed(2)))
 
-  if (ticksWithoutMouse > 5){
-    image = predict(autoMouse.x, autoMouse.y)
+  drawPrediction()
 
-    const move = autoMouse.copy().sub(autoMouseGoal).normalize().mult(-1)
-    autoMouse.add(move)
+  clearButton()
 
-    if (autoMouse.dist(autoMouseGoal) < 2){
-      autoMouseGoal = createVector(random(innerWidth), random(innerWidth))
-    }
+  textAlign(LEFT, TOP)
+  fill(251, 255, 41)
+  text('Made by Maicon !', 5, 5)
+}
 
-    fill(255, 0, 0)
-    circle(autoMouse.x, autoMouse.y, 2)
-    noFill()
+function clearButton() {
+  textAlign(RIGHT, TOP)
+  fill(46, 203, 255)
+  textSize(15)
+  text('LIMPAR', innerWidth - 5, 5)
+}
 
+function mousePressed() {
+
+  if (dist(mouseX, mouseY, innerWidth - 5, 5) < 50) {
+    grid = createEmptyGrid()
+    background(0)
   }
 }
 
-setInterval(() => {
-  if (image && ticksWithoutMouse < 10) {
+function drawPrediction() {
+  textSize(40)
+  textAlign(CENTER, CENTER)
+  const pred = prediction()
 
-    for (let x = 0; x < 28; x++) {
-      for (let y = 0; y < 28; y++) {
-        stroke(max(255 - image[y][x] * 255, 0))
-        point(mouseX + x, mouseY + y)
-      }
-    }
+  const rectWidth = innerWidth / 5
+  const rectHeight = (innerHeight - innerWidth) / 2
+
+
+  for (let num = 0; num < 5; num++) {
+    stroke(0)
+    fill(255)
+    rect(num * rectWidth, innerWidth, rectWidth, rectHeight)
+
+    fill(255, 0, 0)
+    numPred = pred[num]
+    rect(num * rectWidth, innerWidth, rectWidth, rectHeight * numPred)
 
     noStroke()
+    fill(0)
+    text(num, num * rectWidth + rectWidth / 2, innerWidth + rectHeight / 2)
+
   }
-}, 500)
 
-function predict(x, y) {
-  if (decoder) {
+  for (let num = 5; num < 10; num++) {
+    stroke(0)
+    fill(255)
+    rect((num - 5) * rectWidth, innerWidth + rectHeight, rectWidth, rectHeight)
 
-    x = x / innerWidth * 2 - 1
-    y = y / innerWidth * 2 - 1
+    fill(255, 0, 0)
+    numPred = pred[num]
+    rect((num - 5) * rectWidth, innerWidth + rectHeight, rectWidth, rectHeight * numPred)
 
-    return decoder.predict(tf.tensor2d([[x, y]])).reshape([28, 28]).arraySync()
+    noStroke()
+    fill(0)
+    text(num, (num - 5) * rectWidth + rectWidth / 2, innerWidth + 3 * rectHeight / 2)
   }
+}
+
+function prediction() {
+  const x = getOuterGrid()
+
+  y = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+  if (model)
+    y = model.predict(tf.tensor4d([x])).arraySync()[0]
+
+  return y
+}
+
+function getOuterGrid() {
+  const outerGrid = []
+
+  for (let outerX = 0; outerX < outerGridSize; outerX++) {
+    outerGrid[outerX] = []
+    for (let outerY = 0; outerY < outerGridSize; outerY++) {
+      outerGrid[outerX][outerY] = [0]
+      for (let innerX = 0; innerX < innerGridSize; innerX++) {
+        for (let innerY = 0; innerY < innerGridSize; innerY++) {
+          if (grid[outerY * innerGridSize + innerY][outerX * innerGridSize + innerX]) {
+            outerGrid[outerX][outerY][0]++
+          }
+        }
+      }
+      outerGrid[outerX][outerY][0] = outerGrid[outerX][outerY][0] / (innerGridSize ** 2)
+    }
+  }
+
+  return outerGrid
+}
+
+function drawCircle(x, y) {
+  noStroke()
+  fill(255)
+
+
+  if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+    // circle(x * innerWidth, y * innerWidth, 2 * drawRadius)
+    for (let dx = -drawRadius; dx <= drawRadius; dx++) {
+      for (let dy = -drawRadius; dy <= drawRadius; dy++) {
+        const realX = x * innerGridSize * outerGridSize + dx
+        const realY = y * innerGridSize * outerGridSize + dy
+
+        if (
+          realX >= 0 &&
+          realY >= 0 &&
+          realX < innerGridSize * outerGridSize &&
+          realY < innerGridSize * outerGridSize &&
+          dist(
+            x * innerGridSize * outerGridSize,
+            y * innerGridSize * outerGridSize,
+            realX,
+            realY
+          ) < drawRadius
+        ) {
+          grid[floor(realX)][floor(realY)] = true
+          rect(
+            realX / innerGridSize / outerGridSize * innerWidth,
+            realY / innerGridSize / outerGridSize * innerWidth,
+            5, 5
+          )
+        }
+      }
+    }
+  }
+}
+
+function createEmptyGrid() {
+  const grid = []
+
+  for (let x = 0; x < outerGridSize * innerGridSize; x++) {
+    grid[x] = []
+    for (let y = 0; y < outerGridSize * innerGridSize; y++) {
+      grid[x][y] = false
+    }
+  }
+
+  return grid
 }
